@@ -1,0 +1,276 @@
+
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>WarungDB - Manajemen Barang</title>
+    <link rel="stylesheet" href="../styles/style.css">
+</head>
+<body>
+<main>
+    <h1>WarungDB</h1>
+    <p class="muted">Kelola stok, modal, dan potensi laba warung.</p>
+
+    <section class="summary">
+        <div class="card">
+            Total jenis barang
+            <strong id="totalItems">0</strong>
+        </div>
+        <div class="card">
+            Total modal stok
+            <strong id="totalCapital">Rp0</strong>
+        </div>
+        <div class="card">
+            Potensi laba seluruh stok
+            <strong id="potentialProfit">Rp0</strong>
+        </div>
+    </section>
+
+    <section class="panel">
+        <h2 id="formTitle">Tambah Barang</h2>
+        <form id="productForm">
+            <div>
+                <label for="nama">Nama barang</label>
+                <input id="nama" maxlength="100" required>
+            </div>
+            <div>
+                <label for="beli">Harga beli (Rp)</label>
+                <input id="beli" type="number" min="0" step="0.01" required>
+            </div>
+            <div>
+                <label for="jual">Harga jual (Rp)</label>
+                <input id="jual" type="number" min="0" step="0.01" required>
+            </div>
+            <div>
+                <label for="stok">Jumlah stok</label>
+                <input id="stok" type="number" min="0" step="1" required>
+            </div>
+            <button id="saveButton" type="submit">Tambah Barang</button>
+            <button id="cancelButton" class="secondary" type="button" hidden>
+                Batal Edit
+            </button>
+        </form>
+        <p id="message" role="status" aria-live="polite"></p>
+    </section>
+
+    <section class="panel">
+        <h2>Daftar Barang</h2>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Nama</th>
+                        <th>Harga Beli</th>
+                        <th>Harga Jual</th>
+                        <th>Stok</th>
+                        <th>Aksi</th>
+                    </tr>
+                </thead>
+                <tbody id="productRows">
+                    <tr><td colspan="5">Memuat data...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+</main>
+
+<script>
+    const form = document.getElementById("productForm");
+    const nama = document.getElementById("nama");
+    const beli = document.getElementById("beli");
+    const jual = document.getElementById("jual");
+    const stok = document.getElementById("stok");
+    const rows = document.getElementById("productRows");
+    const message = document.getElementById("message");
+    const saveButton = document.getElementById("saveButton");
+    const cancelButton = document.getElementById("cancelButton");
+
+    let editingId = null;
+    let products = [];
+
+    const rupiah = value => new Intl.NumberFormat("id-ID", {
+        style: "currency",
+        currency: "IDR",
+        maximumFractionDigits: 2
+    }).format(Number(value));
+
+    async function request(url, options = {}) {
+        const response = await fetch(url, {
+            ...options,
+            headers: {
+                "Content-Type": "application/json",
+                ...options.headers
+            }
+        });
+
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+            throw new Error(data.error || "Permintaan gagal.");
+        }
+        return data;
+    }
+
+    async function loadProducts() {
+        try {
+            products = await request("/barang");
+            renderProducts();
+            message.textContent = "";
+        } catch (error) {
+            message.textContent = "Gagal memuat data: " + error.message;
+            rows.innerHTML =
+                '<tr><td colspan="5">Data tidak dapat dimuat.</td></tr>';
+        }
+    }
+
+    function renderProducts() {
+        document.getElementById("totalItems").textContent = products.length;
+
+        const capital = products.reduce(
+            (sum, p) => sum + Number(p.harga_beli) * Number(p.stok), 0
+        );
+        const profit = products.reduce(
+            (sum, p) =>
+                sum + (Number(p.harga_jual) - Number(p.harga_beli))
+                    * Number(p.stok), 0
+        );
+
+        document.getElementById("totalCapital").textContent = rupiah(capital);
+        document.getElementById("potentialProfit").textContent = rupiah(profit);
+
+        rows.replaceChildren();
+
+        if (products.length === 0) {
+            const tr = document.createElement("tr");
+            const td = document.createElement("td");
+            td.colSpan = 5;
+            td.textContent = "Belum ada barang. Tambahkan barang di atas.";
+            tr.appendChild(td);
+            rows.appendChild(tr);
+            return;
+        }
+
+        for (const p of products) {
+            const tr = document.createElement("tr");
+
+            for (const value of [
+                p.nama_barang,
+                rupiah(p.harga_beli),
+                rupiah(p.harga_jual),
+                p.stok
+            ]) {
+                const td = document.createElement("td");
+                td.textContent = value;
+                tr.appendChild(td);
+            }
+
+            const actionCell = document.createElement("td");
+            const actions = document.createElement("div");
+            actions.className = "actions";
+
+            const edit = document.createElement("button");
+            edit.textContent = "Edit";
+            edit.className = "secondary";
+            edit.addEventListener("click", () => startEdit(p));
+
+            const del = document.createElement("button");
+            del.textContent = "Hapus";
+            del.className = "danger";
+            del.addEventListener("click", () => deleteProduct(p));
+
+            actions.append(edit, del);
+            actionCell.appendChild(actions);
+            tr.appendChild(actionCell);
+            rows.appendChild(tr);
+        }
+    }
+
+    function startEdit(p) {
+        editingId = p.id_barang;
+        nama.value = p.nama_barang;
+        beli.value = p.harga_beli;
+        jual.value = p.harga_jual;
+        stok.value = p.stok;
+
+        document.getElementById("formTitle").textContent = "Edit Barang";
+        saveButton.textContent = "Simpan Perubahan";
+        cancelButton.hidden = false;
+        nama.focus();
+    }
+
+    function resetForm() {
+        editingId = null;
+        form.reset();
+        document.getElementById("formTitle").textContent = "Tambah Barang";
+        saveButton.textContent = "Tambah Barang";
+        cancelButton.hidden = true;
+    }
+
+    cancelButton.addEventListener("click", resetForm);
+
+    form.addEventListener("submit", async event => {
+        event.preventDefault();
+
+        const product = {
+            nama_barang: nama.value.trim(),
+            harga_beli: beli.value,
+            harga_jual: jual.value,
+            stok: stok.value
+        };
+
+        if (
+            !product.nama_barang ||
+            product.harga_beli === "" ||
+            product.harga_jual === "" ||
+            product.stok === "" ||
+            !Number.isFinite(Number(product.harga_beli)) ||
+            !Number.isFinite(Number(product.harga_jual)) ||
+            Number(product.harga_beli) < 0 ||
+            Number(product.harga_jual) < 0 ||
+            !Number.isInteger(Number(product.stok)) ||
+            Number(product.stok) < 0
+        ) {
+            message.textContent = "Periksa kembali data yang dimasukkan.";
+            return;
+        }
+
+        try {
+            if (editingId === null) {
+                await request("/barang", {
+                    method: "POST",
+                    body: JSON.stringify(product)
+                });
+                message.textContent = "Barang berhasil ditambahkan.";
+            } else {
+                await request(`/barang/${editingId}`, {
+                    method: "PUT",
+                    body: JSON.stringify(product)
+                });
+                message.textContent = "Barang berhasil diperbarui.";
+            }
+
+            resetForm();
+            await loadProducts();
+        } catch (error) {
+            message.textContent = error.message;
+        }
+    });
+
+    async function deleteProduct(p) {
+        if (!confirm(`Hapus barang "${p.nama_barang}"?`)) return;
+
+        try {
+            await request(`/barang/${p.id_barang}`, { method: "DELETE" });
+            if (editingId === p.id_barang) resetForm();
+            message.textContent = "Barang berhasil dihapus.";
+            await loadProducts();
+        } catch (error) {
+            message.textContent = error.message;
+        }
+    }
+
+    loadProducts();
+</script>
+</body>
+</html>
