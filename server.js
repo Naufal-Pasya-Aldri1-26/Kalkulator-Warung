@@ -1,16 +1,21 @@
+const fs = require("fs");
 require("dotenv").config();
 const express = require("express");
 const mysql = require("mysql2/promise");
 const path = require("path");
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 const db = mysql.createPool({
-    host: process.env.DB_HOST || "localhost",
-    user: process.env.DB_USER || "root",
-    password: process.env.DB_PASSWORD || "",
-    database: process.env.DB_NAME || "warungdb"
+    host: process.env.DB_HOST,
+    port: Number(process.env.DB_PORT),
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+    ssl: {
+        ca: fs.readFileSync(path.join(__dirname, "ca.pem"))
+    }
 });
 
 app.use(express.json());
@@ -131,8 +136,8 @@ app.delete("/barang/:id", async (req, res) => {
 async function startServer() {
     try {
         await db.query("SELECT 1");
-        app.listen(PORT, () => {
-            console.log(`WarungDB berjalan di http://localhost:${PORT}`);
+        app.listen(PORT, "0.0.0.0", () => {
+            console.log(`WarungDB berjalan di port ${PORT}`);
         });
     } catch (error) {
         console.error("Gagal terhubung ke MySQL:", error.message);
